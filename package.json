@@ -1,0 +1,29 @@
+{
+  "name": "e2e-prompt-builder",
+  "version": "1.0.0",
+  "description": "E2E Prompt Builder is a Chrome extension for capturing end-to-end testing scenarios directly from any web page. It lets you inspect elements, collect reliable selectors, and compose step-by-step prompts that can be handed to AI tools or converted into automated tests.",
+  "main": "attributeManager.js",
+  "directories": {
+    "example": "example"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/airman5573/e2e-prompt-generator.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/airman5573/e2e-prompt-generator/issues"
+  },
+  "homepage": "https://github.com/airman5573/e2e-prompt-generator#readme",
+  "devDependencies": {
+    "vite": "^7.1.10",
+    "vite-plugin-web-extension": "^4.4.5"
+  }
+}
