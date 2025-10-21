@@ -527,14 +527,13 @@ function handleDocumentClick(event) {
     return;
   }
 
-  event.preventDefault();
-  event.stopPropagation();
-  if (typeof event.stopImmediatePropagation === 'function') {
-    event.stopImmediatePropagation();
-  }
-
   highlightElement(details.element, details);
-  openModal(event);
+  window.setTimeout(() => {
+    if (!inspectorEnabled) {
+      return;
+    }
+    openModal({ type: 'click' });
+  }, 0);
 }
 
 function handleMouseOver(event) {
