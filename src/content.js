@@ -143,6 +143,14 @@ function stopPromptSnapshotTimer() {
   lastSnapshotSignature = null;
 }
 
+function isTargetInsidePromptUI(target) {
+  if (!(target instanceof Node)) {
+    return false;
+  }
+  const overlay = document.querySelector('#e2e-prompt-overlay');
+  return Boolean(overlay && overlay.contains(target));
+}
+
 function ensureCurrentElement() {
   if (state.currentElement && document.contains(state.currentElement)) {
     return state.currentElement;
@@ -331,7 +339,10 @@ function openModal(openEvent) {
   state.currentSelector = details.selector;
   state.currentAttribute = details.attribute;
 
-  const elementToken = `${details.selector} `;
+  const isClickTrigger = openEvent?.type === 'click';
+  const elementToken = isClickTrigger
+    ? `${details.selector} 클릭하면 `
+    : `${details.selector} `;
   const isFirstStep = state.promptText === '' && state.currentStepNumber === 1;
 
   if (isFirstStep) {
@@ -494,8 +505,36 @@ function handleCopyButtonClick() {
       }, 2000);
     })
     .catch(() => {
-      showSnackbar('❌ 복사 실패');
-    });
+    showSnackbar('❌ 복사 실패');
+  });
+}
+
+function handleDocumentClick(event) {
+  if (!inspectorEnabled || state.mode !== 'highlight') {
+    return;
+  }
+
+  if (!(event instanceof MouseEvent) || event.button !== 0) {
+    return;
+  }
+
+  if (isTargetInsidePromptUI(event.target)) {
+    return;
+  }
+
+  const details = attributeManager.findElementBySelector(event.target);
+  if (!details) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  if (typeof event.stopImmediatePropagation === 'function') {
+    event.stopImmediatePropagation();
+  }
+
+  highlightElement(details.element, details);
+  openModal(event);
 }
 
 function handleMouseOver(event) {
@@ -571,6 +610,7 @@ function attachEventListeners() {
   document.addEventListener('mouseout', handleMouseOut, true);
   document.addEventListener('keydown', handleKeyDown, true);
   document.addEventListener('mousemove', trackMousePosition, true);
+  document.addEventListener('click', handleDocumentClick, true);
   window.addEventListener('scroll', handleScrollOrResize, true);
   window.addEventListener('resize', handleScrollOrResize, true);
 }
@@ -580,6 +620,7 @@ function detachEventListeners() {
   document.removeEventListener('mouseout', handleMouseOut, true);
   document.removeEventListener('keydown', handleKeyDown, true);
   document.removeEventListener('mousemove', trackMousePosition, true);
+  document.removeEventListener('click', handleDocumentClick, true);
   window.removeEventListener('scroll', handleScrollOrResize, true);
   window.removeEventListener('resize', handleScrollOrResize, true);
 }
