@@ -1,5 +1,7 @@
 let modalOverlay = null;
 
+export const MODAL_CLOSE_REQUEST_EVENT = 'e2e-prompt-overlay-close-request';
+
 export function ensureModalElements() {
   if (modalOverlay) {
     return modalOverlay;
@@ -31,7 +33,11 @@ export function ensureModalElements() {
       return;
     }
     event.stopPropagation();
-    hideModalUI();
+    overlay.dispatchEvent(
+      new CustomEvent(MODAL_CLOSE_REQUEST_EVENT, {
+        bubbles: true,
+      }),
+    );
   });
 
   const modal = document.createElement('div');

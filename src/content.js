@@ -11,6 +11,7 @@ import {
   getCopyButton,
   showModalUI,
   hideModalUI,
+  MODAL_CLOSE_REQUEST_EVENT,
 } from './lib/modalUI.js';
 import { showSnackbar } from './lib/snackbar.js';
 
@@ -75,11 +76,21 @@ if (chrome?.storage?.onChanged) {
 }
 
 let modalListenersAttached = false;
+let overlayCloseListenerAttached = false;
 
 function ensureModalInitialized() {
   const overlay = ensureModalElements();
   const textarea = getModalTextarea();
   const copyButton = getCopyButton();
+
+  if (!overlayCloseListenerAttached && overlay) {
+    overlay.addEventListener(MODAL_CLOSE_REQUEST_EVENT, () => {
+      if (state.isModalOpen) {
+        handleEscape();
+      }
+    });
+    overlayCloseListenerAttached = true;
+  }
 
   if (!modalListenersAttached && textarea && copyButton) {
     textarea.addEventListener('keydown', handleTextareaKeyDown);
