@@ -25,5 +25,8 @@
   "devDependencies": {
     "vite": "^7.1.10",
     "vite-plugin-web-extension": "^4.4.5"
+  },
+  "dependencies": {
+    "jsdom": "^27.0.1"
   }
 }

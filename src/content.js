@@ -19,6 +19,20 @@ let inspectorEnabled = false;
 let lastMousePosition = null;
 const attributeManager = createAttributeManager();
 
+const INTERACTIVE_TAG_NAMES = new Set(['A', 'BUTTON', 'INPUT', 'LABEL', 'SELECT', 'TEXTAREA']);
+const INTERACTIVE_ROLES = new Set([
+  'button',
+  'link',
+  'checkbox',
+  'menuitem',
+  'menuitemcheckbox',
+  'menuitemradio',
+  'option',
+  'radio',
+  'switch',
+  'tab',
+]);
+
 const state = {
   mode: 'highlight',
   currentElement: null,
@@ -199,6 +213,196 @@ if (chrome?.storage?.onChanged) {
 let modalListenersAttached = false;
 let overlayCloseListenerAttached = false;
 
+function describeElement(element) {
+  if (!(element instanceof Element)) {
+    return String(element);
+  }
+  const parts = [element.tagName.toLowerCase()];
+  if (element.id) {
+    parts.push(`#${element.id}`);
+  }
+  if (element.classList?.length) {
+    parts.push(`.${Array.from(element.classList).join('.')}`);
+  }
+  return parts.join('');
+}
+
+function describeSelectorDetails(details) {
+  if (!details || !details.element) {
+    return null;
+  }
+  return {
+    selector: details.selector,
+    attribute: details.attribute,
+    value: details.value,
+    element: describeElement(details.element),
+  };
+}
+
+function isInteractiveElement(node) {
+  if (!(node instanceof Element)) {
+    return false;
+  }
+
+  if (INTERACTIVE_TAG_NAMES.has(node.tagName)) {
+    return true;
+  }
+
+  const role = node.getAttribute('role');
+  if (role && INTERACTIVE_ROLES.has(role.toLowerCase())) {
+    return true;
+  }
+
+  return Boolean(node.isContentEditable);
+}
+
+function extractEventPathElements(event) {
+  if (!event || typeof event.composedPath !== 'function') {
+    const target = event?.target;
+    return target instanceof Element ? [target] : [];
+  }
+
+  const seen = new Set();
+  const elements = [];
+
+  for (const node of event.composedPath()) {
+    if (!(node instanceof Element) || seen.has(node)) {
+      continue;
+    }
+    seen.add(node);
+    elements.push(node);
+  }
+
+  return elements;
+}
+
+function elementsFromPointer(event) {
+  const fallback = lastMousePosition;
+  let pointX = null;
+  let pointY = null;
+
+  if (event instanceof MouseEvent) {
+    pointX = event.clientX;
+    pointY = event.clientY;
+  } else if (fallback) {
+    pointX = fallback.x;
+    pointY = fallback.y;
+  }
+
+  if (typeof pointX !== 'number' || typeof pointY !== 'number') {
+    return [];
+  }
+
+  let elements = [];
+  if (typeof document.elementsFromPoint === 'function') {
+    elements = document.elementsFromPoint(pointX, pointY) || [];
+  } else {
+    const element = document.elementFromPoint?.(pointX, pointY);
+    if (element) {
+      elements = [element];
+    }
+  }
+
+  return elements.filter((node) => node instanceof Element);
+}
+
+function resolveSelectorDetailsFromEvent(event) {
+  const pathElements = extractEventPathElements(event);
+  if (event?.target instanceof Element && !pathElements.includes(event.target)) {
+    pathElements.unshift(event.target);
+  }
+
+  const pointerElements = elementsFromPointer(event);
+  const combinedElements = [...pathElements];
+  for (const element of pointerElements) {
+    if (!combinedElements.includes(element)) {
+      combinedElements.unshift(element);
+    }
+  }
+
+  const debugInfo = {
+    eventType: event?.type || 'unknown',
+    target: event?.target instanceof Element ? describeElement(event.target) : String(event?.target),
+    path: pathElements.map(describeElement),
+    pointerSample: pointerElements.map(describeElement),
+    interactiveCandidates: [],
+    directTargetChecked: false,
+    fallbackCandidates: [],
+    result: null,
+  };
+
+  for (const element of combinedElements) {
+    if (!isInteractiveElement(element)) {
+      continue;
+    }
+    const described = describeElement(element);
+    debugInfo.interactiveCandidates.push(described);
+    const details = attributeManager.findElementBySelector(element);
+    if (details) {
+      debugInfo.result = {
+        stage: 'interactive',
+        ...describeSelectorDetails(details),
+      };
+      console.log('[Element Inspector] selector resolved', debugInfo);
+      return details;
+    }
+  }
+
+  if (event?.target instanceof Element) {
+    debugInfo.directTargetChecked = true;
+    const directDetails = attributeManager.findElementBySelector(event.target);
+    if (directDetails) {
+      debugInfo.result = {
+        stage: 'direct-target',
+        ...describeSelectorDetails(directDetails),
+      };
+      console.log('[Element Inspector] selector resolved', debugInfo);
+      return directDetails;
+    }
+  }
+
+  for (const element of combinedElements) {
+    const described = describeElement(element);
+    debugInfo.fallbackCandidates.push(described);
+    const details = attributeManager.findElementBySelector(element);
+    if (details) {
+      debugInfo.result = {
+        stage: 'fallback',
+        ...describeSelectorDetails(details),
+      };
+      console.log('[Element Inspector] selector resolved', debugInfo);
+      return details;
+    }
+  }
+
+  console.log('[Element Inspector] selector resolved', debugInfo);
+  return null;
+}
+
+function resolveDetailsForModal(initialDetails) {
+  if (!initialDetails) {
+    return null;
+  }
+
+  const candidate = initialDetails.element instanceof Element ? initialDetails.element : null;
+  if (candidate && document.contains(candidate)) {
+    return { ...initialDetails, element: candidate, rehydrated: false };
+  }
+
+  if (initialDetails.selector) {
+    const queryElement = document.querySelector(initialDetails.selector);
+    if (queryElement instanceof Element) {
+      const refreshed = attributeManager.getSelectorDetails(queryElement);
+      if (refreshed) {
+        return { ...refreshed, rehydrated: true };
+      }
+      return { ...initialDetails, element: queryElement, rehydrated: true };
+    }
+  }
+
+  return { ...initialDetails, element: null, rehydrated: true };
+}
+
 function ensureModalInitialized() {
   const overlay = ensureModalElements();
   const textarea = getModalTextarea();
@@ -319,14 +523,38 @@ function insertAt(text, index, value) {
 }
 
 function openModal(openEvent) {
-  const elementForPrompt = ensureCurrentElement();
-  if (!elementForPrompt) {
-    showSnackbar('⚠️ 선택된 요소가 없습니다');
-    return;
+  const explicitDetails = resolveDetailsForModal(openEvent?.selectorDetails);
+  const fallbackElement = ensureCurrentElement();
+
+  let details = null;
+  let elementForPrompt =
+    explicitDetails?.element instanceof Element && document.contains(explicitDetails.element)
+      ? explicitDetails.element
+      : null;
+
+  if (explicitDetails?.selector) {
+    details = explicitDetails;
+    if (!elementForPrompt) {
+      elementForPrompt = fallbackElement instanceof Element ? fallbackElement : null;
+    }
+    console.log('[Element Inspector] modal using explicit details', {
+      selector: explicitDetails.selector,
+      attribute: explicitDetails.attribute,
+      value: explicitDetails.value,
+      element: describeElement(explicitDetails.element),
+      rehydrated: Boolean(explicitDetails.rehydrated),
+      fallbackUsed: !explicitDetails.element,
+    });
+  } else if (fallbackElement) {
+    elementForPrompt = fallbackElement;
+    details = attributeManager.getSelectorDetails(fallbackElement);
   }
 
-  const details = attributeManager.getSelectorDetails(elementForPrompt);
   if (!details || !details.selector) {
+    console.log('[Element Inspector] modal failed to resolve selector', {
+      explicitProvided: Boolean(explicitDetails),
+      element: elementForPrompt ? describeElement(elementForPrompt) : null,
+    });
     showSnackbar('⚠️ 사용할 수 있는 속성을 찾을 수 없습니다');
     return;
   }
@@ -336,12 +564,13 @@ function openModal(openEvent) {
     return;
   }
 
+  state.currentElement = details.element || elementForPrompt || null;
   state.currentSelector = details.selector;
   state.currentAttribute = details.attribute;
 
   const isClickTrigger = openEvent?.type === 'click';
   const elementToken = isClickTrigger
-    ? `${details.selector} 클릭하면 `
+    ? `${details.selector} 클릭하고 `
     : `${details.selector} `;
   const isFirstStep = state.promptText === '' && state.currentStepNumber === 1;
 
@@ -550,17 +779,22 @@ function handleDocumentClick(event) {
     return;
   }
 
-  const details = attributeManager.findElementBySelector(event.target);
+  const details = resolveSelectorDetailsFromEvent(event);
   if (!details) {
+    console.log('[Element Inspector] click resolved without match', {
+      eventType: event.type,
+      target: event.target instanceof Element ? describeElement(event.target) : String(event.target),
+    });
     return;
   }
 
+  console.log('[Element Inspector] click highlight', describeSelectorDetails(details));
   highlightElement(details.element, details);
   window.setTimeout(() => {
     if (!inspectorEnabled) {
       return;
     }
-    openModal({ type: 'click' });
+    openModal({ type: 'click', selectorDetails: details });
   }, 0);
 }
 
@@ -570,11 +804,16 @@ function handleMouseOver(event) {
     return;
   }
 
-  const details = attributeManager.findElementBySelector(event.target);
+  const details = resolveSelectorDetailsFromEvent(event);
   if (!details) {
+    console.log('[Element Inspector] hover resolved without match', {
+      eventType: event.type,
+      target: event.target instanceof Element ? describeElement(event.target) : String(event.target),
+    });
     return;
   }
 
+  console.log('[Element Inspector] hover highlight', describeSelectorDetails(details));
   if (state.currentElement === details.element) {
     state.currentSelector = details.selector;
     state.currentAttribute = details.attribute;
