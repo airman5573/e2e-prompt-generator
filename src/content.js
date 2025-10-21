@@ -383,6 +383,34 @@ function closeModal() {
   hideModalUI();
 }
 
+function reopenModalWithoutSelector() {
+  const { textarea, copyButton } = ensureModalInitialized();
+  if (!textarea) {
+    return;
+  }
+
+  if (typeof state.caretPosition !== 'number') {
+    state.caretPosition = state.promptText.length;
+  }
+
+  textarea.value = state.promptText;
+  state.mode = 'modal-open';
+  state.isModalOpen = true;
+
+  if (copyButton) {
+    copyButton.textContent = '복사하기';
+  }
+
+  showModalUI();
+
+  window.requestAnimationFrame(() => {
+    const caret = Math.min(Math.max(state.caretPosition, 0), textarea.value.length);
+    textarea.focus();
+    textarea.selectionStart = caret;
+    textarea.selectionEnd = caret;
+  });
+}
+
 function handleCommandEnter() {
   const textarea = getModalTextarea();
   if (!textarea) {
@@ -573,6 +601,12 @@ function handleMouseOut(event) {
 
 function handleKeyDown(event) {
   if (!inspectorEnabled) {
+    return;
+  }
+
+  if (event.key === 'Escape' && !state.isModalOpen) {
+    event.preventDefault();
+    reopenModalWithoutSelector();
     return;
   }
 
