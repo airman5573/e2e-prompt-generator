@@ -16,8 +16,6 @@ import { showSnackbar } from './lib/snackbar.js';
 
 let inspectorEnabled = false;
 let lastMousePosition = null;
-let modalOpenMousePosition = null;
-let mouseIntentDetector = null;
 const attributeManager = createAttributeManager();
 
 const state = {
@@ -30,25 +28,6 @@ const state = {
   isModalOpen: false,
   caretPosition: 0,
 };
-
-const mouseIntentDetectorPromise = import('./lib/mouseIntentDetector.js')
-  .then((module) => {
-    const DetectorClass = module?.default ?? module.MouseIntentDetector ?? module;
-    if (typeof DetectorClass !== 'function') {
-      throw new TypeError('MouseIntentDetector module did not provide a constructor.');
-    }
-    mouseIntentDetector = new DetectorClass({ distanceThreshold: 280 });
-    return mouseIntentDetector;
-  })
-  .catch((error) => {
-    console.warn('[E2E Prompt Builder] Failed to load MouseIntentDetector', error);
-    mouseIntentDetector = null;
-    return null;
-  });
-
-function ensureMouseIntentDetector() {
-  return mouseIntentDetectorPromise;
-}
 
 function ensureCurrentElement() {
   if (state.currentElement && document.contains(state.currentElement)) {
@@ -125,48 +104,6 @@ function trackMousePosition(event) {
     x: event.clientX,
     y: event.clientY,
   };
-}
-
-function handleModalMouseMove(event) {
-  if (!state.isModalOpen) {
-    return;
-  }
-
-  if (!mouseIntentDetector) {
-    ensureMouseIntentDetector();
-    if (!modalOpenMousePosition && typeof event.clientX === 'number' && typeof event.clientY === 'number') {
-      modalOpenMousePosition = { x: event.clientX, y: event.clientY };
-    }
-    return;
-  }
-
-  if (!modalOpenMousePosition && typeof event.clientX === 'number' && typeof event.clientY === 'number') {
-    modalOpenMousePosition = { x: event.clientX, y: event.clientY };
-    const modalElement = document.querySelector('#e2e-prompt-modal');
-    if (modalElement) {
-      try {
-        mouseIntentDetector.stopTracking();
-        mouseIntentDetector.startTracking(modalElement, modalOpenMousePosition);
-      } catch (error) {
-        console.warn('[E2E Prompt Builder] Failed to start detector on first move', error);
-      }
-    }
-    return;
-  }
-
-  const result = mouseIntentDetector.evaluate(event);
-  if (!result || !result.shouldClose) {
-    return;
-  }
-
-  document.removeEventListener('mousemove', handleModalMouseMove, true);
-  modalOpenMousePosition = null;
-  try {
-    mouseIntentDetector.stopTracking();
-  } catch (error) {
-    console.warn('[E2E Prompt Builder] Failed to stop detector', error);
-  }
-  handleEscape();
 }
 
 function highlightElement(element, selectorDetails) {
@@ -291,50 +228,6 @@ function openModal(openEvent) {
     copyButton.textContent = '복사하기';
   }
 
-  const eventIsMouseEvent = typeof MouseEvent !== 'undefined' && openEvent instanceof MouseEvent;
-  const fromEvent = eventIsMouseEvent
-    ? { x: openEvent.clientX, y: openEvent.clientY }
-    : null;
-  if (fromEvent) {
-    modalOpenMousePosition = fromEvent;
-  } else if (lastMousePosition) {
-    modalOpenMousePosition = { x: lastMousePosition.x, y: lastMousePosition.y };
-  } else {
-    modalOpenMousePosition = null;
-  }
-
-  document.removeEventListener('mousemove', handleModalMouseMove, true);
-  document.addEventListener('mousemove', handleModalMouseMove, true);
-  ensureMouseIntentDetector().then((detector) => {
-    if (!detector) {
-      return;
-    }
-
-    const modalElement = document.querySelector('#e2e-prompt-modal');
-    if (!modalElement) {
-      return;
-    }
-
-    const fallbackPoint = lastMousePosition
-      ? { x: lastMousePosition.x, y: lastMousePosition.y }
-      : null;
-    const startingPoint = modalOpenMousePosition || fallbackPoint;
-
-    try {
-      detector.stopTracking();
-    } catch (error) {
-      console.warn('[E2E Prompt Builder] Failed to reset detector', error);
-    }
-
-    if (startingPoint) {
-      try {
-        detector.startTracking(modalElement, startingPoint);
-      } catch (error) {
-        console.warn('[E2E Prompt Builder] Failed to start detector', error);
-      }
-    }
-  });
-
   showModalUI();
 
   window.requestAnimationFrame(() => {
@@ -352,15 +245,6 @@ function closeModal() {
 
   state.mode = 'highlight';
   state.isModalOpen = false;
-  document.removeEventListener('mousemove', handleModalMouseMove, true);
-  modalOpenMousePosition = null;
-  if (mouseIntentDetector) {
-    try {
-      mouseIntentDetector.stopTracking();
-    } catch (error) {
-      console.warn('[E2E Prompt Builder] Failed to stop detector on close', error);
-    }
-  }
   hideModalUI();
 }
 
@@ -597,13 +481,11 @@ function disableInspector() {
   detachEventListeners();
   removeHighlightOverlay();
   hideModalUI();
-  document.removeEventListener('mousemove', handleModalMouseMove, true);
   state.mode = 'highlight';
   state.isModalOpen = false;
   state.currentElement = null;
   state.currentSelector = null;
   state.currentAttribute = null;
-  modalOpenMousePosition = null;
   lastMousePosition = null;
   inspectorEnabled = false;
 
