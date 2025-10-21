@@ -30,6 +30,119 @@ const state = {
   caretPosition: 0,
 };
 
+const SNAPSHOT_STORAGE_KEY = 'e2ePromptSnapshots';
+const SNAPSHOT_INTERVAL_MS = 3000;
+const SNAPSHOT_MAX_ENTRIES = 50;
+
+let snapshotIntervalId = null;
+let lastSnapshotSignature = null;
+
+function getSnapshotSignature() {
+  return [
+    state.promptText || '',
+    state.currentStepNumber || 0,
+    state.caretPosition || 0,
+    state.currentSelector || '',
+    state.currentAttribute || '',
+  ].join('||');
+}
+
+function loadExistingSnapshots() {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return [];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(SNAPSHOT_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed;
+    }
+  } catch (error) {
+    console.warn('[Element Inspector] Failed to parse prompt snapshots', error);
+  }
+
+  return [];
+}
+
+function persistSnapshots(snapshots) {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(SNAPSHOT_STORAGE_KEY, JSON.stringify(snapshots));
+  } catch (error) {
+    console.warn('[Element Inspector] Failed to persist prompt snapshots', error);
+  }
+}
+
+function takePromptSnapshot() {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return;
+  }
+
+  const hasMeaningfulContent =
+    (typeof state.promptText === 'string' && state.promptText.trim().length > 0) ||
+    Boolean(state.currentSelector);
+
+  if (!hasMeaningfulContent) {
+    return;
+  }
+
+  const signature = getSnapshotSignature();
+  if (signature === lastSnapshotSignature) {
+    return;
+  }
+
+  const snapshot = {
+    timestamp: new Date().toISOString(),
+    promptText: state.promptText,
+    currentStepNumber: state.currentStepNumber,
+    caretPosition: state.caretPosition,
+    currentSelector: state.currentSelector,
+    currentAttribute: state.currentAttribute,
+    mode: state.mode,
+    pageUrl: window.location.href,
+  };
+
+  const snapshots = loadExistingSnapshots();
+  snapshots.push(snapshot);
+  if (snapshots.length > SNAPSHOT_MAX_ENTRIES) {
+    snapshots.splice(0, snapshots.length - SNAPSHOT_MAX_ENTRIES);
+  }
+
+  persistSnapshots(snapshots);
+  lastSnapshotSignature = signature;
+}
+
+function startPromptSnapshotTimer() {
+  if (snapshotIntervalId !== null) {
+    return;
+  }
+
+  snapshotIntervalId = window.setInterval(() => {
+    try {
+      takePromptSnapshot();
+    } catch (error) {
+      console.warn('[Element Inspector] Snapshot timer error', error);
+    }
+  }, SNAPSHOT_INTERVAL_MS);
+}
+
+function stopPromptSnapshotTimer() {
+  if (snapshotIntervalId === null) {
+    return;
+  }
+
+  window.clearInterval(snapshotIntervalId);
+  snapshotIntervalId = null;
+  lastSnapshotSignature = null;
+}
+
 function ensureCurrentElement() {
   if (state.currentElement && document.contains(state.currentElement)) {
     return state.currentElement;
@@ -480,6 +593,8 @@ function enableInspector() {
   ensureModalInitialized();
   hideModalUI();
   attachEventListeners();
+  startPromptSnapshotTimer();
+  takePromptSnapshot();
   inspectorEnabled = true;
   console.log('[Element Inspector] 활성화됨');
 }
@@ -489,6 +604,8 @@ function disableInspector() {
     return;
   }
 
+  takePromptSnapshot();
+  stopPromptSnapshotTimer();
   detachEventListeners();
   removeHighlightOverlay();
   hideModalUI();
