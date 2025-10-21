@@ -1,10 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script type="module" src="http://localhost:5173/@vite/client"></script>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Attribute Selection</title>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
     <style>
       :root {
         color-scheme: light dark;
@@ -230,14 +232,14 @@
         <h2 id="built-in-attributes" class="section-title">Built-in attributes</h2>
         <form id="options-form" class="checkbox-list" aria-labelledby="built-in-attributes">
           <label>
-            <input type="checkbox" name="attribute" value="id" checked />
+            <input type="checkbox" name="attribute" value="id" checked>
             <span class="label-text">
               <span class="primary">ID</span>
               <span class="secondary">Unique element identifiers</span>
             </span>
           </label>
           <label>
-            <input type="checkbox" name="attribute" value="class" />
+            <input type="checkbox" name="attribute" value="class">
             <span class="label-text">
               <span class="primary">Class</span>
               <span class="secondary">Reusable styling hooks</span>
@@ -250,13 +252,7 @@
         <h2 class="section-title">Custom attributes</h2>
         <p class="section-description">Add any other attributes you want captured. They will be used after the built-in ones.</p>
         <form id="custom-attribute-form" class="custom-input-row">
-          <input
-            id="custom-attribute-input"
-            type="text"
-            name="custom-attribute"
-            placeholder="e.g. data-testid"
-            autocomplete="off"
-          />
+          <input id="custom-attribute-input" type="text" name="custom-attribute" placeholder="e.g. data-testid" autocomplete="off">
           <button type="submit" id="add-custom-attribute-button">Add</button>
         </form>
         <div id="custom-attributes-empty-state" class="empty-state">No custom attributes yet.</div>
@@ -269,5 +265,6 @@
       </div>
       <p class="shortcut-hint">Enter: 다음단계 | Cmd+Enter: 단계추가 | ESC: 현재단계유지</p>
     </main>
+    <script type="module" src="http://localhost:5173/options/options.js"></script>
   </body>
 </html>

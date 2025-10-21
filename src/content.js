@@ -522,7 +522,8 @@ function insertAt(text, index, value) {
   return text.slice(0, safeIndex) + value + text.slice(safeIndex);
 }
 
-function openModal(openEvent) {
+function openModal(openEvent, options = {}) {
+  const { skipModalDisplay = false } = options;
   const explicitDetails = resolveDetailsForModal(openEvent?.selectorDetails);
   const fallbackElement = ensureCurrentElement();
 
@@ -559,11 +560,6 @@ function openModal(openEvent) {
     return;
   }
 
-  const { textarea, copyButton } = ensureModalInitialized();
-  if (!textarea) {
-    return;
-  }
-
   state.currentElement = details.element || elementForPrompt || null;
   state.currentSelector = details.selector;
   state.currentAttribute = details.attribute;
@@ -584,7 +580,21 @@ function openModal(openEvent) {
     state.caretPosition = insertionIndex + elementToken.length;
   }
 
-  textarea.value = state.promptText;
+  const { textarea, copyButton } = ensureModalInitialized();
+  if (textarea) {
+    textarea.value = state.promptText;
+  }
+
+  if (skipModalDisplay) {
+    state.mode = 'highlight';
+    state.isModalOpen = false;
+    return;
+  }
+
+  if (!textarea) {
+    return;
+  }
+
   state.mode = 'modal-open';
   state.isModalOpen = true;
 
@@ -790,11 +800,15 @@ function handleDocumentClick(event) {
 
   console.log('[Element Inspector] click highlight', describeSelectorDetails(details));
   highlightElement(details.element, details);
+  const shouldOpenModal = event.ctrlKey || event.metaKey || false;
   window.setTimeout(() => {
     if (!inspectorEnabled) {
       return;
     }
-    openModal({ type: 'click', selectorDetails: details });
+    openModal(
+      { type: 'click', selectorDetails: details },
+      { skipModalDisplay: !shouldOpenModal }
+    );
   }, 0);
 }
 
