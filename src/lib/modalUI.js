@@ -27,8 +27,11 @@ export function ensureModalElements() {
     box-sizing: border-box;
   `;
   overlay.addEventListener('click', (event) => {
+    if (event.target !== overlay) {
+      return;
+    }
     event.stopPropagation();
-    event.preventDefault();
+    hideModalUI();
   });
 
   const modal = document.createElement('div');
