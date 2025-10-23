@@ -44,12 +44,16 @@ const state = {
   caretPosition: 0,
 };
 
+const DOUBLE_SPACE_THRESHOLD_MS = 200;
+
 const SNAPSHOT_STORAGE_KEY = 'e2ePromptSnapshots';
 const SNAPSHOT_INTERVAL_MS = 3000;
 const SNAPSHOT_MAX_ENTRIES = 50;
 
 let snapshotIntervalId = null;
 let lastSnapshotSignature = null;
+let lastSpaceKeyTimestamp = 0;
+let pendingSpaceKeyTimeoutId = null;
 
 function getSnapshotSignature() {
   return [
@@ -486,7 +490,7 @@ function navigateToParent() {
     parent = parent.parentElement;
   }
 
-  showSnackbar('⚠️ 사용할 수 있는 상위 요소가 없습니다', 1200, '#ff9800');
+  showSnackbar('사용할 수 있는 상위 요소가 없습니다', 1200, '#ff9800');
 }
 
 function navigateToChild() {
@@ -513,7 +517,7 @@ function navigateToChild() {
   if (childDetails) {
     highlightElement(childDetails.element, childDetails);
   } else {
-    showSnackbar('⚠️ 사용할 수 있는 하위 요소가 없습니다', 1200, '#ff9800');
+    showSnackbar('사용할 수 있는 하위 요소가 없습니다', 1200, '#ff9800');
   }
 }
 
@@ -556,7 +560,7 @@ function openModal(openEvent, options = {}) {
       explicitProvided: Boolean(explicitDetails),
       element: elementForPrompt ? describeElement(elementForPrompt) : null,
     });
-    showSnackbar('⚠️ 사용할 수 있는 속성을 찾을 수 없습니다');
+    showSnackbar('사용할 수 있는 속성을 찾을 수 없습니다');
     return;
   }
 
@@ -753,7 +757,7 @@ function handleCopyButtonClick() {
   state.caretPosition = textarea.selectionStart;
 
   if (!navigator?.clipboard?.writeText) {
-    showSnackbar('❌ 복사 실패');
+    showSnackbar('복사 실패');
     return;
   }
 
@@ -772,7 +776,7 @@ function handleCopyButtonClick() {
       }, 2000);
     })
     .catch(() => {
-    showSnackbar('❌ 복사 실패');
+    showSnackbar('복사 실패');
   });
 }
 
@@ -852,6 +856,42 @@ function handleMouseOut(event) {
   }
 }
 
+function copyCurrentElementId() {
+  const element = ensureCurrentElement();
+  if (!element) {
+    showSnackbar('선택된 요소가 없습니다', 1200, '#ff9800');
+    return;
+  }
+
+  const elementId = typeof element.id === 'string' ? element.id.trim() : '';
+  if (!elementId) {
+    showSnackbar('선택된 요소에 id가 없습니다', 1200, '#ff9800');
+    return;
+  }
+
+  if (!navigator?.clipboard?.writeText) {
+    showSnackbar('복사 실패');
+    return;
+  }
+
+  navigator.clipboard
+    .writeText(elementId)
+    .then(() => {
+      showSnackbar(`#${elementId} 복사됨`, 1000, '#4caf50');
+    })
+    .catch(() => {
+      showSnackbar('복사 실패');
+    });
+}
+
+function resetSpaceKeyDetectionState() {
+  if (pendingSpaceKeyTimeoutId !== null) {
+    window.clearTimeout(pendingSpaceKeyTimeoutId);
+    pendingSpaceKeyTimeoutId = null;
+  }
+  lastSpaceKeyTimestamp = 0;
+}
+
 function handleKeyDown(event) {
   if (!inspectorEnabled) {
     return;
@@ -879,8 +919,34 @@ function handleKeyDown(event) {
     event.preventDefault();
     navigateToChild();
   } else if (event.code === 'Space' || event.key === ' ') {
+    if (event.repeat) {
+      event.preventDefault();
+      return;
+    }
+
     event.preventDefault();
-    openModal(event);
+    const now = Date.now();
+    if (
+      pendingSpaceKeyTimeoutId !== null &&
+      now - lastSpaceKeyTimestamp <= DOUBLE_SPACE_THRESHOLD_MS
+    ) {
+      resetSpaceKeyDetectionState();
+      copyCurrentElementId();
+      return;
+    }
+
+    resetSpaceKeyDetectionState();
+    lastSpaceKeyTimestamp = now;
+    pendingSpaceKeyTimeoutId = window.setTimeout(() => {
+      pendingSpaceKeyTimeoutId = null;
+      lastSpaceKeyTimestamp = 0;
+
+      if (!inspectorEnabled || state.mode !== 'highlight') {
+        return;
+      }
+
+      openModal({ type: 'key-space' });
+    }, DOUBLE_SPACE_THRESHOLD_MS);
   }
 }
 
@@ -936,6 +1002,7 @@ function disableInspector() {
   detachEventListeners();
   removeHighlightOverlay();
   hideModalUI();
+  resetSpaceKeyDetectionState();
   state.mode = 'highlight';
   state.isModalOpen = false;
   state.currentElement = null;
