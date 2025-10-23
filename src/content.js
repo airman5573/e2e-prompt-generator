@@ -877,7 +877,7 @@ function copyCurrentElementId() {
   navigator.clipboard
     .writeText(elementId)
     .then(() => {
-      showSnackbar(`#${elementId} 복사됨`, 1000, '#4caf50');
+      showSnackbar(`#${elementId} 복사됨`, 3000, '#4caf50');
     })
     .catch(() => {
       showSnackbar('복사 실패');
